@@ -1,24 +1,20 @@
 import cv2
-import tensorflow as tf
 import numpy as np
-from matplotlib import pyplot as plt
-import scipy.misc
 import os
-import random
+import shutil
 
-count = 80000
-#%%     生成类文件夹
-for i in range (3):
-    curPath=os.getcwd()
-    tempPath =('/data2/train_dataAugmentation/')+('%05d' % i)
-    targetPath=curPath+os.path.sep+tempPath
-    if not os.path.exists(targetPath):
-        os.makedirs(targetPath)
-    else:
-        print('Already exist！')
+COUNT = 897758
+
+#%%  创建文件夹
+def mkdir(path):
+    folder = os.path.exists(path)
+    if not folder:
+        os.makedirs(path)
+
 
 #%%   仿射变换并保存生成的图像
-def affine_transform(image_dir):
+def affine_transform(image_dir,image_dest_dir):
+    global COUNT
     image = cv2.imread(image_dir)
     shape = image.shape
     shape_size = shape[:2]  # [84, 65]
@@ -27,27 +23,48 @@ def affine_transform(image_dir):
     pts2 = pts1 + np.random.uniform(-alpha_affine, alpha_affine, size=pts1.shape).astype(np.float32)
     M = cv2.getAffineTransform(pts1, pts2)
     image_affine = cv2.warpAffine(image, M, shape_size[::-1], borderValue=(255, 255, 255))
-    name_image = ('%d'% (count+1)) +'.png'
-    cv2.imwrite('/data2/train_dataAugmentation/test_example/'+ name_image, image_affine)
+    COUNT = COUNT + 1
+    image_name = str(COUNT) + '.png'
+    image_restore = os.path.join(image_dest_dir,image_name)
+    cv2.imwrite(image_restore, image_affine)
 
-#%% 遍历每个数据
+#%% 目录及文件的合并
+def Merge(A_path,B_path):       # 合并两个目录到B
+    B_paths = os.listdir(B_path)    # 获取当前B中的目录结构
+    for fp in os.listdir(A_path):   # 遍历当前A目录中的文件或文件夹
+        A_new_path = os.path.join(A_path,fp)    # A中的文件或目录
+        B_new_path = os.path.join(B_path,fp)    # B中对应的文件或路径，不一定存在
+
+        if os.path.isdir(A_new_path):           # A中的目录
+            if os.path.exists(B_new_path):      # 如果在B中存在
+                Merge(A_new_path,B_new_path)    # 继续合并下一级目录
+            else:   # 如果在B中不存在
+                shutil.copytree(A_new_path,B_new_path)   # 完全复制目录到B
+
+        elif os.path.isfile(A_new_path):        # A中的文件
+            shutil.copy2(A_new_path,B_new_path)
+
+#%% 遍历每个数据对其进行仿射变换，合并原有数据和生成数据
 data_dir='data/train/'
-truncate_path = data_dir + ('%05d' % 3)
-print(truncate_path)  # 'data/train/03755'
+truncate_path = data_dir + ('%05d' % 3755)
 image_names = []
-
+global COUNT_ROOT
+COUNT_ROOT = 0
 for root, sub_folder, file_list in os.walk(data_dir):  # os.walk() 方法用于通过在目录树中游走输出在目录中的文件名，向上或者向下
     if root < truncate_path:
-        image_dir = [os.path.join(root, file_path) for file_path in
-                             file_list]
-        if image_dir!=[]:
-            print(image_dir)
-        #affine_transform(image_dir)
-        image_names += image_dir
-        # label = int(img[len(data_dir):].split(os.sep)[0])
-random.shuffle(image_names)  # 随机打乱次序
-for file_name in image_names:
-    labels = [int(file_name[len(data_dir):].split(os.sep)[0])]
+        COUNT_ROOT = COUNT_ROOT + 1
+        if COUNT_ROOT > 1:
+            label = ('%05d' % (int(root[len(data_dir):])))
+            createFolder = 'data/train_dataAugmentation/' + str(label)
+            mkdir(createFolder)
+        for file_path in file_list:
+             image_dir = os.path.join(root, file_path)
+             affine_transform(image_dir,createFolder)
+             image_names += [image_dir]
+
+A_path = 'data/train_dataAugmentation/'
+B_path = 'data/train/'
+Merge(A_path,B_path)
 
 
 
