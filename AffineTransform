@@ -1,0 +1,54 @@
+import cv2
+import tensorflow as tf
+import numpy as np
+from matplotlib import pyplot as plt
+import scipy.misc
+import os
+import random
+
+count = 80000
+#%%     生成类文件夹
+for i in range (3):
+    curPath=os.getcwd()
+    tempPath =('/data2/train_dataAugmentation/')+('%05d' % i)
+    targetPath=curPath+os.path.sep+tempPath
+    if not os.path.exists(targetPath):
+        os.makedirs(targetPath)
+    else:
+        print('Already exist！')
+
+#%%   仿射变换并保存生成的图像
+def affine_transform(image_dir):
+    image = cv2.imread(image_dir)
+    shape = image.shape
+    shape_size = shape[:2]  # [84, 65]
+    alpha_affine = 6
+    pts1 = np.float32([[0, 0], [0, shape_size[1]], [shape_size[0], shape_size[1]]])
+    pts2 = pts1 + np.random.uniform(-alpha_affine, alpha_affine, size=pts1.shape).astype(np.float32)
+    M = cv2.getAffineTransform(pts1, pts2)
+    image_affine = cv2.warpAffine(image, M, shape_size[::-1], borderValue=(255, 255, 255))
+    name_image = ('%d'% (count+1)) +'.png'
+    cv2.imwrite('/data2/train_dataAugmentation/test_example/'+ name_image, image_affine)
+
+#%% 遍历每个数据
+data_dir='data/train/'
+truncate_path = data_dir + ('%05d' % 3)
+print(truncate_path)  # 'data/train/03755'
+image_names = []
+
+for root, sub_folder, file_list in os.walk(data_dir):  # os.walk() 方法用于通过在目录树中游走输出在目录中的文件名，向上或者向下
+    if root < truncate_path:
+        image_dir = [os.path.join(root, file_path) for file_path in
+                             file_list]
+        if image_dir!=[]:
+            print(image_dir)
+        #affine_transform(image_dir)
+        image_names += image_dir
+        # label = int(img[len(data_dir):].split(os.sep)[0])
+random.shuffle(image_names)  # 随机打乱次序
+for file_name in image_names:
+    labels = [int(file_name[len(data_dir):].split(os.sep)[0])]
+
+
+
+
