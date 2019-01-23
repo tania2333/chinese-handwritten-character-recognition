@@ -31,7 +31,7 @@ tf.app.flags.DEFINE_integer('save_steps', 2000, "the steps to save")
 tf.app.flags.DEFINE_string('checkpoint_dir', 'checkpoint/', 'the checkpoint dir')
 tf.app.flags.DEFINE_string('train_data_dir', 'data/train/', 'the train dataset dir')
 tf.app.flags.DEFINE_string('test_data_dir', 'data/test/', 'the test dataset dir')
-tf.app.flags.DEFINE_string('log_dir', './log_test', 'the logging dir')
+tf.app.flags.DEFINE_string('log_dir', './log', 'the logging dir')
 
 tf.app.flags.DEFINE_boolean('restore', False, 'whether to restore from checkpoint')
 tf.app.flags.DEFINE_integer('epoch', 1, 'Number of epoches')
@@ -51,7 +51,7 @@ class DataIterator:
                                                                #sub_folder 是一个 list ，内容是该文件夹中所有的目录/文件夹的名字(不包括子目录)
                                                                #files 同样是 list , 内容是该文件夹中所有的文件(不包括子目录) 00000 - 03754
         for root, sub_folder, file_list in os.walk(data_dir): #os.walk() 方法用于通过在目录树中游走输出在目录中的文件名，向上或者向下
-            if root < truncate_path:                          #00000 到 03754 < 03755
+            if root < truncate_path:
                 self.image_names += [os.path.join(root, file_path) for file_path in file_list]     #把目录和文件名合成一个路径image_names = 'data/train/00000/xxx'
         random.shuffle(self.image_names)                                                            #随机打乱次序
         self.labels = [int(file_name[len(data_dir):].split(os.sep)[0]) for file_name in self.image_names]   #根据路径取每一张图的标签 比如 data/train/00000/15->00000/15->00000
@@ -69,8 +69,6 @@ class DataIterator:
             images = tf.image.random_brightness(images, max_delta=0.3)
         if FLAGS.random_contrast:
             images = tf.image.random_contrast(images, 0.8, 1.2)
-        # if FLAGS.affine_transform:
-        #     images = affine_transform(images)
         return images
 
     def input_pipeline(self, batch_size, num_epochs=None, aug=False):
@@ -82,7 +80,8 @@ class DataIterator:
         images_content = tf.read_file(input_queue[0])
         images = tf.image.convert_image_dtype(tf.image.decode_png(images_content, channels=1), tf.float32)
         if aug:
-            images = self.data_augmentation(images)
+            with tf.name_scope('data_augmentation'):
+                images = self.data_augmentation(images)
         new_size = tf.constant([FLAGS.image_size, FLAGS.image_size], dtype=tf.int32)   #[64,64]
         images = tf.image.resize_images(images, new_size)
         image_batch, label_batch = tf.train.shuffle_batch([images, labels], batch_size=batch_size, capacity=50000,
@@ -95,31 +94,47 @@ def build_graph(top_k):
     keep_prob = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
     images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
     labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
+    with tf.name_scope('Conv1'):
+        with tf.name_scope('conv2d_1'):
+            conv_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv1')  #1是步长  slim.conv2d中激活函数默认为ReLU
+        with tf.name_scope('pool1'):
+            max_pool_1 = slim.max_pool2d(conv_1, [2, 2], [2, 2], padding='SAME')  #后面的[2,2]是指步长
+    with tf.name_scope('Conv2'):
+        with tf.name_scope('conv2d_2'):
+            conv_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv2')
+        with tf.name_scope('pool2'):
+            max_pool_2 = slim.max_pool2d(conv_2, [2, 2], [2, 2], padding='SAME')
+    with tf.name_scope('Conv3'):
+        with tf.name_scope('conv2d_3'):
+            conv_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3')
+        with tf.name_scope('pool3'):
+            max_pool_3 = slim.max_pool2d(conv_3, [2, 2], [2, 2], padding='SAME')
 
-    conv_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv1')  #1是步长  slim.conv2d中激活函数默认为ReLU
-    max_pool_1 = slim.max_pool2d(conv_1, [2, 2], [2, 2], padding='SAME')  #后面的[2,2]是指步长
-    conv_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv2')
-    max_pool_2 = slim.max_pool2d(conv_2, [2, 2], [2, 2], padding='SAME')
-    conv_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3')
-    max_pool_3 = slim.max_pool2d(conv_3, [2, 2], [2, 2], padding='SAME')
-
-    flatten = slim.flatten(max_pool_3)#卷积层和全连接层进行连接时有个输入格式转换过程，即卷积层的输出是一个x*y*z的矩阵，而全连接层的输入是一个向量，需要把矩阵拉直成向量
-    fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024, activation_fn=tf.nn.tanh, scope='fc1')
-    logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None, scope='fc2')
+    with tf.name_scope('fc'):
+        with tf.name_scope('flatten'):
+            flatten = slim.flatten(max_pool_3)#卷积层和全连接层进行连接时有个输入格式转换过程，即卷积层的输出是一个x*y*z的矩阵，而全连接层的输入是一个向量，需要把矩阵拉直成向量
+        with tf.name_scope('fc1'):
+            fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024, activation_fn=tf.nn.tanh, scope='fc1')
+        with tf.name_scope('fc2'):
+            logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None, scope='fc2')
         # logits = slim.fully_connected(flatten, FLAGS.charset_size, activation_fn=None, reuse=reuse, scope='fc')
-    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
-    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+    with tf.name_scope('loss'):
+        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+        tf.summary.scalar('loss', loss)
+    with tf.name_scope('accuracy'):
+        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+        tf.summary.scalar('accuracy', accuracy)
 
     global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)  #创建一个新的变量  []shape,表明是一个标量
     rate = tf.train.exponential_decay(2e-4, global_step, decay_steps=2000, decay_rate=0.97, staircase=True) #设置学习率衰减，每decay_steps轮训练后要乘以decay_rate
     train_op = tf.train.AdamOptimizer(learning_rate=rate).minimize(loss, global_step=global_step)
     probabilities = tf.nn.softmax(logits)
 
-    tf.summary.scalar('loss', loss)
-    tf.summary.scalar('accuracy', accuracy)
     merged_summary_op = tf.summary.merge_all()
     predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)  #返回 probabilities 中每行最大的 k 个数，并且返回它们所在位置的索引
-    accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32)) #probabilities中最大的K个值所对应的index是不是包括了labels: if top_k = 2, 3-0,4 4-0,5 labels=3 donc true
+    with tf.name_scope('accuracy_in_top_k'):
+        accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32)) #probabilities中最大的K个值所对应的index是不是包括了labels: if top_k = 2, 3-0,4 4-0,5 labels=3 donc true
+        tf.summary.scalar('accuracy_in_top_k', accuracy_in_top_k)
 
     return {'images': images,
             'labels': labels,
