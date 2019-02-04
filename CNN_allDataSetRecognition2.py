@@ -9,14 +9,14 @@ import pickle
 from PIL import Image
 
 
-logger = logging.getLogger('Training a chinese write char recognition')
-logger.setLevel(logging.INFO)
+logger = logging.getLogger('Training a chinese write char recognition')   #创建一个日志器
+logger.setLevel(logging.INFO)                                                   #设置日志器将会处理的日志消息的最低严重级别
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
+ch = logging.StreamHandler()                                                    # 将日志消息发送到输出到Stream，如std.out, std.err或任何file-like对象
+ch.setLevel(logging.INFO)                                                       # 指定被处理的信息级别
 logger.addHandler(ch)
 
-
+#用户自定义的命令行参数,可在终端用 python CNN_allDataSetRecognition2.py -h 查看
 tf.app.flags.DEFINE_boolean('random_flip_up_down', False, "Whether to random flip up down")
 tf.app.flags.DEFINE_boolean('random_brightness', True, "whether to adjust brightness")
 tf.app.flags.DEFINE_boolean('random_contrast', True, "whether to random constrast")
@@ -24,9 +24,9 @@ tf.app.flags.DEFINE_boolean('random_contrast', True, "whether to random constras
 tf.app.flags.DEFINE_integer('charset_size', 3755, "Choose the first `charset_size` character to conduct our experiment.")
 tf.app.flags.DEFINE_integer('image_size', 64, "Needs to provide same value as in training.")
 tf.app.flags.DEFINE_boolean('gray', True, "whether to change the rbg to gray")
-tf.app.flags.DEFINE_integer('max_steps', 12002, 'the max training steps ')
-tf.app.flags.DEFINE_integer('eval_steps', 50, "the step num to eval")
-tf.app.flags.DEFINE_integer('save_steps', 2000, "the steps to save")
+tf.app.flags.DEFINE_integer('max_steps', 12002, 'the max training steps ')   #in training, max_steps=200000
+tf.app.flags.DEFINE_integer('eval_steps', 50, "the step num to eval")     #in training, eval_steps=1000
+tf.app.flags.DEFINE_integer('save_steps', 2000, "the steps to save")     ##in training, save_steps=10000
 
 tf.app.flags.DEFINE_string('checkpoint_dir', 'checkpoint/', 'the checkpoint dir')
 tf.app.flags.DEFINE_string('train_data_dir', 'data/train/', 'the train dataset dir')
@@ -46,13 +46,13 @@ class DataIterator:
         truncate_path = data_dir + ('%05d' % FLAGS.charset_size)    #  五个占位的格式 truncate_path：截断路径
         print(truncate_path)                                         # 'data/train/03755'
         self.image_names = []
-
-                                                               #root 所指的是当前正在遍历的这个文件夹的本身的地址
-                                                               #sub_folder 是一个 list ，内容是该文件夹中所有的目录/文件夹的名字(不包括子目录)
-                                                               #files 同样是 list , 内容是该文件夹中所有的文件(不包括子目录) 00000 - 03754
-        for root, sub_folder, file_list in os.walk(data_dir): #os.walk() 方法用于通过在目录树中游走输出在目录中的文件名，向上或者向下
+                                                                              #iter=0                  iter=1            iter=2
+                                                                #root        data/train/               data/train/00000   .../00001
+                                                                #sub_folder  data/train/00000-03754    none              none
+                                                                #files       none                      1958,3821,...     3054,4918
+        for root, sub_folder, file_list in os.walk(data_dir):  #os.walk() 方法用于通过在目录树中游走输出在目录中的文件名，向上或者向下
             if root < truncate_path:
-                self.image_names += [os.path.join(root, file_path) for file_path in file_list]     #把目录和文件名合成一个路径image_names = 'data/train/00000/xxx'
+                self.image_names += [os.path.join(root, file_path) for file_path in file_list]     #把目录和文件名合成一个路径image_names = 'data/train/00000/1958'
         random.shuffle(self.image_names)                                                            #随机打乱次序
         self.labels = [int(file_name[len(data_dir):].split(os.sep)[0]) for file_name in self.image_names]   #根据路径取每一张图的标签 比如 data/train/00000/15->00000/15->00000
                                                                                                              #os.sep根据你所处的平台, 自动采用相应的分隔符号 / ou \
@@ -61,7 +61,6 @@ class DataIterator:
         return len(self.labels)   #一共有多少类字
 
     @staticmethod     ## 静态方法无需实例化便可调用
-    # def affine_transform():!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     def data_augmentation(images):
         if FLAGS.random_flip_up_down:
             images = tf.image.random_flip_up_down(images)
@@ -78,15 +77,16 @@ class DataIterator:
 
         labels = input_queue[1]
         images_content = tf.read_file(input_queue[0])
-        images = tf.image.convert_image_dtype(tf.image.decode_png(images_content, channels=1), tf.float32)
+        images = tf.image.convert_image_dtype(tf.image.decode_png(images_content, channels=1), tf.float32)  #channels 表示解码图像所需的颜色通道数量，=1：输出一个灰度图像
+        #这里tf.image.decode_png 得到的是uint8格式，范围在0-255之间，经过convert_image_dtype 就会被转换为区间在0-1之间的float32格式
         if aug:
             with tf.name_scope('data_augmentation'):
                 images = self.data_augmentation(images)
         new_size = tf.constant([FLAGS.image_size, FLAGS.image_size], dtype=tf.int32)   #[64,64]
         images = tf.image.resize_images(images, new_size)
         image_batch, label_batch = tf.train.shuffle_batch([images, labels], batch_size=batch_size, capacity=50000,
-                                                          min_after_dequeue=10000)
-        return image_batch, label_batch
+                                                          min_after_dequeue=10000)  #capacity给出队列的最大容量，当队列长度等于capacity时，TensorFlow将暂停入队操作，而只是等待元素出队。当元素个数小于容量时，TensorFlow将自动重新启动入队操作。
+        return image_batch, label_batch                                            #batch_size表示每次出队的张量列表大小
 
 
 def build_graph(top_k):
@@ -119,15 +119,15 @@ def build_graph(top_k):
             logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None, scope='fc2')
         # logits = slim.fully_connected(flatten, FLAGS.charset_size, activation_fn=None, reuse=reuse, scope='fc')
     with tf.name_scope('loss'):
-        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))  #传入的label为一个一维的vector，长度等于batch_size，每一个值的取值区间必须是[0，num_classes)，sparse_..函数首先将其转化为one-hot格式
         tf.summary.scalar('loss', loss)
     with tf.name_scope('accuracy'):
         accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
         tf.summary.scalar('accuracy', accuracy)
 
     global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)  #创建一个新的变量  []shape,表明是一个标量
-    rate = tf.train.exponential_decay(2e-4, global_step, decay_steps=2000, decay_rate=0.97, staircase=True) #设置学习率衰减，每decay_steps轮训练后要乘以decay_rate
-    train_op = tf.train.AdamOptimizer(learning_rate=rate).minimize(loss, global_step=global_step)
+    rate = tf.train.exponential_decay(2e-4, global_step, decay_steps=2000, decay_rate=0.97, staircase=True) #设置学习率衰减，staircase=True表示每decay_steps轮训练后要乘以decay_rate
+    train_op = tf.train.AdamOptimizer(learning_rate=rate).minimize(loss, global_step=global_step)  #以为全局步骤(global step)计数
     probabilities = tf.nn.softmax(logits)
 
     merged_summary_op = tf.summary.merge_all()
@@ -153,22 +153,22 @@ def build_graph(top_k):
 
 def train():
     print('Begin training')
-    train_feeder = DataIterator(data_dir='data/train/')
+    train_feeder = DataIterator(data_dir='data/train/')   #类DataIterator的实例化，调用初始化函数：__init__
     test_feeder = DataIterator(data_dir='data/test/')
     with tf.Session() as sess:
         train_images, train_labels = train_feeder.input_pipeline(batch_size=FLAGS.batch_size, aug=True)
         test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size)
         graph = build_graph(top_k=1)
         sess.run(tf.global_variables_initializer())
-        coord = tf.train.Coordinator()  #创建一个线程管理器（协调器）对象
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)  #启动tensor的入队线程
+        coord = tf.train.Coordinator()  #创建一个线程管理器（协调器）对象，用来管理在Session中的多个线程
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)  #启动tensor的入队线程，用来启动多个工作线程同时将多个tensor（训练数据）推送入文件名称队列中
         saver = tf.train.Saver() #训练网络后想保存训练好的模型，以及在程序中读取以保存的训练好的模型,都要先实例化一个saver
 
         train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
         test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/val')
         start_step = 0
         if FLAGS.restore:
-            ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)  #自动获取最后一次保存的模型
+            ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)  #自动获取最后一次保存的模型，重载模型的参数，继续训练或用于测试数据
             if ckpt:
                 saver.restore(sess, ckpt)
                 print("restore from the checkpoint {0}".format(ckpt))
@@ -176,10 +176,10 @@ def train():
 
         logger.info(':::Training Start:::')
         try:
-            while not coord.should_stop():#查询是否应该终止所有线程，当文件队列（queue）中的所有文件都已经读取出列的时候
+            while not coord.should_stop():#查询是否应该终止所有线程，当文件队列（queue）中的所有文件都已经读取出列的时候就应该停止Sesson中的所有线程了
                 start_time = time.time()
-                train_images_batch, train_labels_batch = sess.run([train_images, train_labels])
-                feed_dict = {graph['images']: train_images_batch,
+                train_images_batch, train_labels_batch = sess.run([train_images, train_labels])   #线程管理：sess.run 来启动数据出列和执行计算
+                feed_dict = {graph['images']: train_images_batch,    #feed_dict中变量对应placeholder
                              graph['labels']: train_labels_batch,
                              graph['keep_prob']: 0.8}
                 _, loss_val, train_summary, step = sess.run(
@@ -188,9 +188,9 @@ def train():
                 train_writer.add_summary(train_summary, step)
                 end_time = time.time()
                 logger.info("the step {0} takes {1} loss {2}".format(step, end_time - start_time, loss_val))
-                if step > FLAGS.max_steps:
+                if step > FLAGS.max_steps:    # max_steps=200000
                     break
-                if step % FLAGS.eval_steps == 1:
+                if step % FLAGS.eval_steps == 1:   #eval_steps=1000
                     test_images_batch, test_labels_batch = sess.run([test_images, test_labels])
                     feed_dict = {graph['images']: test_images_batch,
                                  graph['labels']: test_labels_batch,
@@ -201,13 +201,13 @@ def train():
                     test_writer.add_summary(test_summary, step)
                     logger.info('===============Eval a batch=======================')
                     logger.info('the step {0} test accuracy: {1}'
-                                .format(step, accuracy_test))
+                                .format(step, accuracy_test))      #每训练1000次，用一个batch的测试集进行测试并输出
                     logger.info('===============Eval a batch=======================')
-                if step % FLAGS.save_steps == 1:
+                if step % FLAGS.save_steps == 1:   #save_steps=10000
                     logger.info('Save the ckpt of {0}'.format(step))
                     saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'my-model'),
-                               global_step=graph['global_step'])
-        except tf.errors.OutOfRangeError:
+                               global_step=graph['global_step'])#训练循环中，定期调用 saver.save() 方法，向文件夹中写入包含当前模型中所有可训练变量的 checkpoint 文件
+        except tf.errors.OutOfRangeError:  # 线程管理中：一旦文件名队列空了之后，如果后面的流水线还要尝试从文件名队列中取出一个文件名，这将会触发OutOfRange错误
             logger.info('==================Train Finished================')
             saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'my-model'), global_step=graph['global_step'])
         finally:
@@ -224,7 +224,7 @@ def validation():
     groundtruth = []
 
     with tf.Session() as sess:
-        test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size, num_epochs=1)
+        test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size, num_epochs=1)  #num_epochs=1：只用了一次完整的测试集进行测试
         graph = build_graph(3)    #top_k = 3
 
         sess.run(tf.global_variables_initializer())
@@ -255,7 +255,7 @@ def validation():
                                                                        graph['predicted_index_top_k'],
                                                                        graph['accuracy'],
                                                                        graph['accuracy_top_k']], feed_dict=feed_dict)
-                final_predict_val += probs.tolist()
+                final_predict_val += probs.tolist()  #将数组或者矩阵转换成列表
                 final_predict_index += indices.tolist()
                 groundtruth += batch_labels.tolist()
                 acc_top_1 += acc_1
@@ -266,7 +266,7 @@ def validation():
 
         except tf.errors.OutOfRangeError:
             logger.info('==================Validation Finished================')
-            acc_top_1 = acc_top_1 * FLAGS.batch_size / test_feeder.size
+            acc_top_1 = acc_top_1 * FLAGS.batch_size / test_feeder.size   #整个测试集平均下来的准确率
             acc_top_k = acc_top_k * FLAGS.batch_size / test_feeder.size
             logger.info('top 1 accuracy {0} top k accuracy {1}'.format(acc_top_1, acc_top_k))
         finally:
@@ -277,8 +277,8 @@ def validation():
 
 def inference(image):
     print('inference')
-    temp_image = Image.open(image).convert('L')
-    temp_image = temp_image.resize((FLAGS.image_size, FLAGS.image_size), Image.ANTIALIAS)
+    temp_image = Image.open(image).convert('L')  #转为灰度图
+    temp_image = temp_image.resize((FLAGS.image_size, FLAGS.image_size), Image.ANTIALIAS) #Image.ANTIALIAS：高质量
     temp_image = np.asarray(temp_image) / 255.0
     temp_image = temp_image.reshape([-1, 64, 64, 1])
     with tf.Session() as sess:
@@ -303,8 +303,8 @@ def main(_):
         dct = validation()
         result_file = 'result.dict'
         logger.info('Write result into {0}'.format(result_file))
-        with open(result_file, 'wb') as f:
-            pickle.dump(dct, f)
+        with open(result_file, 'wb') as f:  #wb：以二进制写模式打开
+            pickle.dump(dct, f)  #将结果数据流写入到文件对象中，pickle可以将对象以文件的形式存放在磁盘上
         logger.info('Write file ends')
     elif FLAGS.mode == 'inference':
         #image_path = 'data/test/00190/13320.png'
